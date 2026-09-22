@@ -7,33 +7,37 @@ const app = express();
 app.use(express.json());
 
 let sock;
-let qrCodeData = "";
+let latestQR = "";
+let connectionStatus = "Connecting...";
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' })
     });
 
-    // Yeh line theek kar di gayi hai
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) {
-            qrCodeData = qr;
-            console.log("New QR Received, scan it!");
+            latestQR = qr;
+            connectionStatus = "Scan QR Code";
+            console.log("New QR Received!");
         }
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
+            connectionStatus = "Disconnected, reconnecting...";
+            console.log('Connection closed, reconnecting...', shouldReconnect);
             if (shouldReconnect) {
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
+            connectionStatus = "Connected Successfully!";
+            latestQR = "";
             console.log('WhatsApp Connected Successfully!');
         }
     });
@@ -46,7 +50,38 @@ async function connectToWhatsApp() {
     });
 }
 
-// API endpoint to send message from CRM
+// Browser par QR code dikhane ke liye route
+app.get('/', (req, res) => {
+    if (connectionStatus === "Connected Successfully!") {
+        return res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h1 style="color: green;">WhatsApp Connected Successfully! ✅</h1>
+                <p>Aapka WhatsApp CRM ke sath successfully mirror ho chuka hai.</p>
+            </div>
+        `);
+    }
+    if (!latestQR) {
+        return res.send(`
+            <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+                <h2>Status: ${connectionStatus}</h2>
+                <p>QR code generate ho raha hai, page khud hi refresh hoga...</p>
+                <script>setTimeout(() => window.location.reload(), 3000);</script>
+            </div>
+        `);
+    }
+    const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(latestQR)}`;
+    res.send(`
+        <div style="text-align:center; margin-top:50px; font-family:sans-serif;">
+            <h2>WhatsApp CRM - Scan QR Code</h2>
+            <p>Status: <b>${connectionStatus}</b></p>
+            <img src="${qrApiUrl}" alt="WhatsApp QR Code" style="border: 2px solid #ccc; padding: 10px; border-radius: 10px;" />
+            <p>Apna WhatsApp Business kholein (Linked Devices > Link a Device) aur yeh QR code scan karein.</p>
+            <script>setTimeout(() => window.location.reload(), 5000);</script>
+        </div>
+    `);
+});
+
+// API endpoint to send message
 app.post('/send-message', async (req, res) => {
     const { phone, message } = req.body;
     try {
