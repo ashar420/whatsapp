@@ -18,7 +18,8 @@ async function connectToWhatsApp() {
         logger: pino({ level: 'silent' })
     });
 
-    sock.льнай('creds.update', saveCreds);
+    // Yeh line theek kar di gayi hai
+    sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -41,7 +42,6 @@ async function connectToWhatsApp() {
         const msg = m.messages[0];
         if (!msg.key.fromMe && m.type === 'notify') {
             console.log("New Message:", msg.message?.conversation || msg.message?.extendedTextMessage?.text);
-            // Yahan aap incoming messages ko database ya frontend par bhej sakte hain
         }
     });
 }
